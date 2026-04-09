@@ -393,7 +393,7 @@ open class RNMBXMapViewManager(context: ReactApplicationContext, val viewTagReso
     }
 
     override fun setCompassImage(view: RNMBXMapView, value: Dynamic?) {
-        // TODO: No-op on Android?
+        view.setReactCompassImage(value?.asString())
     }
 
     //endregion

@@ -62,10 +62,13 @@ import java.util.*
 
 import com.rnmapbox.rnmbx.components.annotation.RNMBXPointAnnotationCoordinator
 import com.rnmapbox.rnmbx.components.images.ImageManager
+import com.rnmapbox.rnmbx.components.images.Resolver
+import com.rnmapbox.rnmbx.components.images.Subscription
 import com.rnmapbox.rnmbx.utils.extensions.toStringKeyPairs
 
 import com.rnmapbox.rnmbx.v11compat.event.*
 import com.rnmapbox.rnmbx.v11compat.feature.*
+import com.rnmapbox.rnmbx.v11compat.image.toImageHolder
 import com.rnmapbox.rnmbx.v11compat.mapboxmap.*
 import com.rnmapbox.rnmbx.v11compat.ornamentsettings.*
 import org.json.JSONException
@@ -1322,6 +1325,8 @@ open class RNMBXMapView(private val mContext: Context, var mManager: RNMBXMapVie
 
     var mCompassSettings = OrnamentSettings(enabled = false)
     var mCompassFadeWhenNorth = false
+    var mCompassImage: String? = null
+    var mCompassImageSubscription: Subscription? = null
 
     fun setReactCompassEnabled(compassEnabled: Boolean) {
         mCompassSettings.enabled = compassEnabled
@@ -1348,10 +1353,43 @@ open class RNMBXMapView(private val mContext: Context, var mManager: RNMBXMapVie
         changes.add(Property.COMPASS)
     }
 
+    fun setReactCompassImage(compassImage: String?) {
+        mCompassImage = compassImage
+        changes.add(Property.COMPASS)
+    }
+
+    private fun cancelCompassImageSubscription() {
+        mCompassImageSubscription?.cancel()
+        mCompassImageSubscription = null
+    }
+
     private fun applyCompass() {
+        val compassImage = mCompassImage?.ifBlank { null }
+        val styleImageHolder = compassImage?.let { imageName ->
+            mMap.getStyle()
+                ?.takeIf { style -> style.hasStyleImage(imageName) }
+                ?.getStyleImage(imageName)
+                ?.toImageHolder()
+        }
+
         mapView.compass.updateSettings {
             fadeWhenFacingNorth = mCompassFadeWhenNorth
             updateOrnament("compass", mCompassSettings, this.toGenericOrnamentSettings())
+            image = styleImageHolder
+        }
+
+        if (compassImage == null || styleImageHolder != null) {
+            cancelCompassImageSubscription()
+        } else if (mCompassImageSubscription == null || mCompassImageSubscription?.name != compassImage) {
+            cancelCompassImageSubscription()
+            mCompassImageSubscription = imageManager.subscribe(compassImage, Resolver { name: String, image: Image ->
+                if (name == mCompassImage) {
+                    mapView.compass.updateSettings {
+                        this.image = image.toImageHolder()
+                    }
+                    workaroundToRelayoutChildOfMapView()
+                }
+            })
         }
         workaroundToRelayoutChildOfMapView()
     }
@@ -1517,6 +1555,7 @@ open class RNMBXMapView(private val mContext: Context, var mManager: RNMBXMapVie
      */
 
     fun onDropViewInstance() {
+        cancelCompassImageSubscription()
         removeAllFeaturesFromMap(RemovalReason.ON_DESTROY)
         mapView.viewAnnotationManager.removeAllViewAnnotations()
         lifecycle.onDestroy()
@@ -1611,6 +1650,3 @@ fun OrnamentSettings.setPosAndMargins(posAndMargins: ReadableMap?) {
     this.position = position
     this.margins = margins
 }
-
-
-
